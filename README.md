@@ -14,7 +14,7 @@
 
 `cargo run add hello`
 
-##Database
+## Database
 
 All data is stored in the data.csv file.
 This is non-negotiable.
