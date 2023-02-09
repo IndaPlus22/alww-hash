@@ -1,0 +1,237 @@
+use serde::Deserialize;
+use std::{
+    error::Error,
+    fs::{File, OpenOptions},
+    io::{Read, Write},
+};
+#[derive(Deserialize)]
+struct Record {
+    key: usize,
+    value: String,
+}
+
+pub struct DB {
+    db: HashMap,
+}
+
+impl DB {
+    pub fn new() -> Self {
+        Self { db: HashMap::new() }
+    }
+    pub fn insert<T>(&mut self, input: T)
+    where
+        T: Hash + ToString,
+    {
+        self.db.insert(input);
+    }
+    pub fn delete<T>(&mut self, input: T)
+    where
+        T: Hash + ToString,
+    {
+        self.db.delete(input);
+    }
+    pub fn get<T>(&mut self, input: T) -> Option<usize>
+    where
+        T: Hash + ToString,
+    {
+        self.db.get(input)
+    }
+    pub fn write(&self) {
+        let file_path = "data.csv";
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&file_path)
+            .expect("Something went wrong.");
+        let mut db_contents: Vec<String> = Vec::new();
+        for list in &self.db.list {
+            let mut line = String::new();
+            for node in list {
+                line.push_str(node.value.as_str());
+                line.push_str("|");
+                line.push_str(node.key.to_string().as_str());
+                line.push_str(",");
+            }
+            db_contents.push(line);
+        }
+
+        file.write_all("".as_bytes());
+        for line in db_contents {
+            file.write(line.as_bytes());
+        }
+    }
+    pub fn load(&mut self, file: &mut File) -> Result<(), Box<dyn Error>> {
+        let mut csv = String::new();
+        file.read_to_string(&mut csv);
+        let mut reader = csv::Reader::from_reader(csv.as_bytes());
+
+        for vec in reader.deserialize() {
+            let vec: Record = vec?;
+            // let thing = Thing {
+            //     name: record[0].to_string(),
+            //     shape: Some(record[1].to_string()),
+            //     key: record[2].to_string(),
+            // };
+            // //writer.serialize((&thing.Name, &thing.Shape))?;
+            // let serialized_thing: String = serde_json::to_string(&thing).unwrap();
+            // table.insert(thing.key, serialized_thing);
+        }
+        Ok(())
+    }
+}
+
+pub trait Hash {
+    fn hash(&self) -> usize;
+}
+
+pub trait ToString {
+    fn to_string_(&self) -> String;
+}
+
+impl Hash for String {
+    fn hash(&self) -> usize {
+        let bits = self.as_bytes();
+        let length: usize = self.len();
+        let mut hash_value: usize = 0;
+        for x in 0..length {
+            hash_value = hash_value.overflowing_add(usize::from(bits[x])).0;
+            hash_value = hash_value.overflowing_mul(usize::from(bits[x])).0;
+        }
+        hash_value
+    }
+}
+
+impl ToString for String {
+    fn to_string_(&self) -> String {
+        self.to_owned()
+    }
+}
+
+impl Hash for isize {
+    fn hash(&self) -> usize {
+        if self.is_negative() {
+            return usize::MAX - self.abs() as usize;
+        } else {
+            return *self as usize;
+        }
+    }
+}
+
+impl ToString for isize {
+    fn to_string_(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl Hash for usize {
+    fn hash(&self) -> usize {
+        *self
+    }
+}
+
+impl ToString for usize {
+    fn to_string_(&self) -> String {
+        self.to_string()
+    }
+}
+#[derive(Default, Clone, PartialEq, Debug, Eq)]
+struct HashNode {
+    key: usize,
+    value: String,
+}
+
+impl HashNode {
+    fn new(key: usize, value: String) -> Self {
+        Self { key, value }
+    }
+}
+#[derive(Debug)]
+struct HashMap {
+    list: Vec<Vec<HashNode>>,
+    n: usize,
+    m: usize,
+}
+
+impl HashMap {
+    fn new() -> Self {
+        Self {
+            list: vec![Vec::<HashNode>::new(); 2],
+            n: 0,
+            m: 2,
+        }
+    }
+    fn insert<T>(&mut self, input: T)
+    where
+        T: Hash + ToString,
+    {
+        let key = self.hash(&input);
+        let node = HashNode::new(key, input.to_string_());
+        let value_exists = self.list[key].contains(&node);
+        if value_exists {
+            return;
+        }
+        self.list[key].push(node);
+        self.n += 1;
+        self.resize();
+    }
+    fn delete<T>(&mut self, input: T)
+    where
+        T: Hash + ToString,
+    {
+        let key = self.hash(&input);
+        let node = HashNode::new(key, input.to_string_());
+        let value_exists = self.list[key].contains(&node);
+        if !value_exists {
+            return;
+        }
+        let position = self.list[key].iter().position(|x| *x == node).unwrap();
+        self.list[key].remove(position);
+        self.n -= 1;
+        self.resize();
+    }
+    fn get<T>(&mut self, input: T) -> Option<usize>
+    where
+        T: Hash + ToString,
+    {
+        let key = self.hash(&input);
+        let node = HashNode::new(key, input.to_string_());
+        let value_exists = self.list[key].contains(&node);
+        if !value_exists {
+            return None;
+        }
+        Some(key)
+    }
+    fn hash<T>(&self, input: &T) -> usize
+    where
+        T: Hash + ToString,
+    {
+        input.hash() % self.m
+    }
+    fn hp<T>(&self, input: T)
+    where
+        T: Hash + ToString,
+    {
+        let key = self.hash(&input);
+        println!("{}", key);
+    }
+    fn resize(&mut self) {
+        if self.n as f64 / self.m as f64 <= 0.5 {
+            self.n /= 2;
+        } else if self.n as f64 / self.m as f64 >= 1.5 {
+            self.n *= 2;
+        } else {
+            return;
+        }
+
+        self.list.shrink_to_fit();
+        let mut items: Vec<HashNode> = Vec::new();
+        for list in &self.list {
+            for item in list {
+                items.push(item.to_owned());
+            }
+        }
+        for item in items {
+            self.insert(item.value);
+        }
+    }
+}
