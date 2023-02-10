@@ -1,9 +1,15 @@
+use crate::traits::*;
 use serde::ser::SerializeStruct;
 use serde::Deserialize;
 use serde::Serialize;
 use serde::Serializer;
+use std::fs::File;
+use std::io::Write;
 use std::{error::Error, fs::OpenOptions, io::Read};
 
+/////////////////////////////////////////////////////////////////////////////////
+//                                DB-abstraction                               //
+/////////////////////////////////////////////////////////////////////////////////
 pub struct DB {
     db: HashMap,
 }
@@ -16,7 +22,7 @@ impl DB {
     where
         T: Hash + ToString,
     {
-        self.db.insert(input);
+        self.db.insert(input, true);
     }
     pub fn delete<T>(&mut self, input: T)
     where
@@ -31,13 +37,7 @@ impl DB {
         self.db.get(input)
     }
     pub fn write(&self) {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open("data.csv")
-            .unwrap();
-
-        let mut writer = csv::Writer::from_writer(file);
+        let mut writer = csv::Writer::from_path("data.csv").unwrap();
         writer.serialize(("Key", "Value"));
 
         for list in &self.db.list {
@@ -51,13 +51,7 @@ impl DB {
 
         writer.flush();
     }
-    pub fn load(&mut self) -> Result<(), Box<dyn Error>> {
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open("data.csv")
-            .unwrap();
+    pub fn load(&mut self, file: &mut File) -> Result<(), Box<dyn Error>> {
         let mut csv = String::new();
         file.read_to_string(&mut csv);
 
@@ -65,10 +59,8 @@ impl DB {
 
         for node in reader.records() {
             let node = node?;
-            let key: usize = node[0].parse().unwrap();
             let value = node[1].to_owned();
-            let node = HashNode { key, value };
-            self.insert(node.value);
+            self.insert(value);
         }
         Ok(())
     }
@@ -88,60 +80,9 @@ impl DB {
     }
 }
 
-pub trait Hash {
-    fn hash(&self) -> usize;
-}
-
-pub trait ToString {
-    fn to_string_(&self) -> String;
-}
-
-impl Hash for String {
-    fn hash(&self) -> usize {
-        let bits = self.as_bytes();
-        let length: usize = self.len();
-        let mut hash_value: usize = 0;
-        for x in 0..length {
-            hash_value = hash_value.overflowing_add(usize::from(bits[x])).0;
-            hash_value = hash_value.overflowing_mul(17).0;
-        }
-        hash_value
-    }
-}
-
-impl ToString for String {
-    fn to_string_(&self) -> String {
-        self.to_owned()
-    }
-}
-
-impl Hash for isize {
-    fn hash(&self) -> usize {
-        if self.is_negative() {
-            return usize::MAX - self.abs() as usize;
-        } else {
-            return *self as usize;
-        }
-    }
-}
-
-impl ToString for isize {
-    fn to_string_(&self) -> String {
-        self.to_string()
-    }
-}
-
-impl Hash for usize {
-    fn hash(&self) -> usize {
-        *self
-    }
-}
-
-impl ToString for usize {
-    fn to_string_(&self) -> String {
-        self.to_string()
-    }
-}
+/////////////////////////////////////////////////////////////////////////////////
+//                                HashNode                                     //
+/////////////////////////////////////////////////////////////////////////////////
 #[derive(Default, Clone, PartialEq, Debug, Deserialize, Eq)]
 struct HashNode {
     key: usize,
@@ -171,6 +112,9 @@ impl HashNode {
         Self { key, value }
     }
 }
+/////////////////////////////////////////////////////////////////////////////////
+//                                HashMap                                      //
+/////////////////////////////////////////////////////////////////////////////////
 #[derive(Debug)]
 struct HashMap {
     list: Vec<Vec<HashNode>>,
@@ -186,7 +130,7 @@ impl HashMap {
             m: 2,
         }
     }
-    fn insert<T>(&mut self, input: T)
+    fn insert<T>(&mut self, input: T, do_it: bool)
     where
         T: Hash + ToString,
     {
@@ -195,7 +139,9 @@ impl HashMap {
         let value_exists = self.list[key].contains(&node);
         if !value_exists {
             self.list[key].push(node);
-            self.n += 1;
+            if do_it {
+                self.n += 1;
+            }
             self.resize();
         }
         // eprintln!("\n\n{:?}\n\n", self)
@@ -232,22 +178,12 @@ impl HashMap {
     {
         input.hash() % self.m
     }
-    fn hp<T>(&self, input: T)
-    where
-        T: Hash + ToString,
-    {
-        let key = self.hash(&input);
-        println!("{}", key);
-    }
     fn resize(&mut self) {
         if (self.n as f64 / self.m as f64) < 0.5 {
             self.m /= 2;
         } else if (self.n as f64 / self.m as f64) >= 1.5 {
             let l = self.m;
             self.m *= 2;
-            for x in 0..(self.m - l) {
-                self.list.push(Vec::<HashNode>::new());
-            }
         } else {
             return;
         }
@@ -263,7 +199,7 @@ impl HashMap {
         }
         self.list = vec![Vec::<HashNode>::new(); self.m];
         for item in items {
-            self.insert(item.value);
+            self.insert(item.value, false);
         }
     }
 }

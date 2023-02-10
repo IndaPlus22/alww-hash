@@ -1,13 +1,20 @@
+use hash_lib::DB;
 use serde::Deserialize;
 use std::{
     env,
     fs::{self, OpenOptions},
     io::{self, BufRead},
 };
-
-use alww_hash::DB;
+mod hash_lib;
+mod traits;
 
 fn main() {
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open("data.csv")
+        .unwrap();
     let help_message = "Correct format: cargo run [argument] [parameter]\nExample:        cargo run    get       cerise \n\n- if \"cerise\" should exist in the database, return its corresponding key.\n\n";
     let mut db = DB::new();
     let args: Vec<String> = env::args().collect();
@@ -22,11 +29,11 @@ fn main() {
         }
         param = &args[2];
     }
-    // let arg = "add".to_owned();
+    // let arg = "get".to_owned();
     // let param = "OoOoOo";
     let file_path = "data.asv";
 
-    db.load();
+    db.load(&mut file);
 
     match arg.as_str() {
         "insert" | "add" => db.insert(param.to_owned()),
